@@ -1,0 +1,386 @@
+{
+  "name": "AI Sales Agent — 1. Instant Response",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "wf1-a1",
+              "name": "name",
+              "value": "={{ $json.body?.name || $json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "wf1-a2",
+              "name": "email",
+              "value": "={{ $json.body?.email || $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "wf1-a3",
+              "name": "phone",
+              "value": "={{ $json.body?.phone || $json.phone || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf1-a4",
+              "name": "message",
+              "value": "={{ $json.body?.message || $json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "wf1-a5",
+              "name": "service",
+              "value": "={{ $json.body?.service || $json.service || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf1-a6",
+              "name": "source",
+              "value": "={{ $json.body?.source || $json.source || 'website' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf1-a7",
+              "name": "created_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "id": "wf1-node-002",
+      "name": "Extract Lead Data"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LeadPipeline",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "NAME": "={{ $json.name }}",
+            "EMAIL": "={{ $json.email }}",
+            "PHONE": "={{ $json.phone }}",
+            "SOURCE": "={{ $json.source }}",
+            "STATUS": "NEW",
+            "SERVICE": "={{ $json.service }}",
+            "MESSAGE": "={{ $json.message }}",
+            "LEAD_SCORE": "WARM",
+            "BOOKED": "FALSE",
+            "CREATED_AT": "={{ $json.created_at }}",
+            "LAST_CONTACT": "={{ $json.created_at }}",
+            "FOLLOW_UP_COUNT": "0"
+          },
+          "matchingColumns": [
+            "EMAIL"
+          ],
+          "schema": []
+        },
+        "options": {
+          "matchingColumn": "EMAIL"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "EMAIL",
+              "lookupValue": "={{ $json.body?.email || $json.email }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        440,
+        0
+      ],
+      "id": "wf1-node-003",
+      "name": "Log Lead to CRM"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=New website inquiry from {{ $('Extract Lead Data').item.json.name }}:\n\n{{ $('Extract Lead Data').item.json.message }}\n\nService interested in: {{ $('Extract Lead Data').item.json.service || 'not specified' }}\nTheir email: {{ $('Extract Lead Data').item.json.email }}",
+        "options": {
+          "systemMessage": "You are a professional AI Sales Assistant.\n\nYour job:\n1. Respond warmly and personally to the inquiry\n2. Address exactly what they asked about\n3. Show genuine interest in helping them\n4. Briefly explain how you can help with their specific need\n5. End with ONE clear call to action — invite them to book a free consultation\n6. Keep under 150 words\n7. Sound like a real human, not a robot\n8. Never mention you are AI\n9. Sign as: The Support Team"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        660,
+        0
+      ],
+      "id": "wf1-node-004",
+      "name": "AI Sales Agent"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        660,
+        220
+      ],
+      "id": "wf1-node-005",
+      "name": "OpenAI Chat Model"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "wf1-b1",
+              "name": "ai_reply",
+              "value": "={{ $json.output }}",
+              "type": "string"
+            },
+            {
+              "id": "wf1-b2",
+              "name": "customer_email",
+              "value": "={{ $('Extract Lead Data').item.json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "wf1-b3",
+              "name": "customer_name",
+              "value": "={{ $('Extract Lead Data').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "wf1-b4",
+              "name": "customer_phone",
+              "value": "={{ $('Extract Lead Data').item.json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "wf1-b5",
+              "name": "customer_message",
+              "value": "={{ $('Extract Lead Data').item.json.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        0
+      ],
+      "id": "wf1-node-006",
+      "name": "Format Reply"
+    },
+    {
+      "parameters": {
+        "fromEmail": "hithereitsme0011@gmail.com",
+        "toEmail": "={{ $json.customer_email }}",
+        "subject": "=Thanks for reaching out, {{ $json.customer_name }}!",
+        "emailFormat": "text",
+        "text": "={{ $json.ai_reply }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1100,
+        -100
+      ],
+      "id": "wf1-node-007",
+      "name": "Email Customer"
+    },
+    {
+      "parameters": {
+        "fromEmail": "hithereitsme0011@gmail.com",
+        "toEmail": "hithereitsme0011@gmail.com",
+        "subject": "=🔔 New Website Lead: {{ $json.customer_name }}",
+        "emailFormat": "text",
+        "text": "=New lead from website!\n\nName: {{ $json.customer_name }}\nEmail: {{ $json.customer_email }}\nPhone: {{ $json.customer_phone }}\n\nMessage:\n{{ $json.customer_message }}\n\nAI has already replied. Check LeadPipeline sheet.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1100,
+        100
+      ],
+      "id": "wf1-node-008",
+      "name": "Notify Team"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LeadPipeline",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "STATUS": "CONTACTED",
+            "LAST_CONTACT": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "EMAIL"
+          ],
+          "schema": []
+        },
+        "options": {
+          "matchingColumn": "EMAIL"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "EMAIL",
+              "lookupValue": "={{ $json.customer_email }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1320,
+        -100
+      ],
+      "id": "wf1-node-009",
+      "name": "Update Status to CONTACTED"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "patch-trigger-2698",
+      "name": "Execute Workflow Trigger"
+    }
+  ],
+  "connections": {
+    "Extract Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Log Lead to CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Lead to CRM": {
+      "main": [
+        [
+          {
+            "node": "AI Sales Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Sales Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Reply": {
+      "main": [
+        [
+          {
+            "node": "Email Customer",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Customer": {
+      "main": [
+        [
+          {
+            "node": "Update Status to CONTACTED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Sales Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "ai-sales-crm"
+  },
+  "id": "BestWF1",
+  "tags": [
+    {
+      "name": "AI Sales CRM"
+    }
+  ]
+}

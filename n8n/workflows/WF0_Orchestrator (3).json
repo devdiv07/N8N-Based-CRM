@@ -1,0 +1,575 @@
+{
+  "name": "AI Sales Agent — 0. Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-sales/intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "wf0-node-001",
+      "name": "Master Intake Webhook",
+      "webhookId": "wf0-webhook-001"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "wf0-a1",
+              "name": "name",
+              "value": "={{ $json.body?.name || $json.name || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf0-a2",
+              "name": "email",
+              "value": "={{ $json.body?.email || $json.email || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf0-a3",
+              "name": "phone",
+              "value": "={{ $json.body?.phone || $json.phone || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf0-a4",
+              "name": "message",
+              "value": "={{ $json.body?.message || $json.message || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf0-a5",
+              "name": "service",
+              "value": "={{ $json.body?.service || $json.service || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf0-a6",
+              "name": "source",
+              "value": "={{ $json.body?.source || $json.source || 'website' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf0-a7",
+              "name": "preferred_date",
+              "value": "={{ $json.body?.preferred_date || $json.preferred_date || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf0-a8",
+              "name": "preferred_time",
+              "value": "={{ $json.body?.preferred_time || $json.preferred_time || '10:00' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "id": "wf0-node-002",
+      "name": "Extract Input Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst missing = [];\nif (!data.message || String(data.message).trim() === '') missing.push('message');\nconst email = data.email ? String(data.email).trim() : '';\nconst phone = data.phone ? String(data.phone).trim() : '';\nif (!email && !phone) missing.push('email_or_phone');\nif (email && !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) missing.push('email_invalid');\nreturn [{ json: { ...data, validation_error: missing.length > 0, validation_missing: missing } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        0
+      ],
+      "id": "wf0-node-013",
+      "name": "Validate Base Inputs"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "wf0-c3",
+              "leftValue": "={{ $json.validation_error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        580,
+        0
+      ],
+      "id": "wf0-node-014",
+      "name": "Has Base Errors?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: \"error\", message: \"Missing or invalid required fields\", missing: $json.validation_missing || [] } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        820,
+        -200
+      ],
+      "id": "wf0-node-015",
+      "name": "Respond Bad Request"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message }}",
+        "options": {
+          "systemMessage": "You are an AI intake router for a business sales pipeline.\n\nRead the message and classify the intent into EXACTLY ONE of these:\n\nLEAD = New person asking questions, showing interest, wants info\nBOOK = Person explicitly wants to schedule or book an appointment\nREACTIVATE = Old or cold lead coming back after long silence\n\nDefault to LEAD if unsure.\n\nRespond with ONLY valid JSON. No markdown. No explanation.\nFormat: {\"intent\": \"LEAD\", \"urgency\": \"high\", \"reason\": \"one sentence\"}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        440,
+        0
+      ],
+      "id": "wf0-node-003",
+      "name": "AI Intent Classifier"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        440,
+        220
+      ],
+      "id": "wf0-node-004",
+      "name": "OpenAI Chat Model"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst raw = item.json.output || '{}';\nlet parsed;\ntry {\n  const clean = raw.replace(/```json|```/g, '').trim();\n  parsed = JSON.parse(clean);\n} catch(e) {\n  parsed = { intent: 'LEAD', urgency: 'medium', reason: 'parse error fallback' };\n}\nreturn [{\n  json: {\n    ...($('Extract Input Data').first().json),\n    intent: parsed.intent || 'LEAD',\n    urgency: parsed.urgency || 'medium',\n    reason: parsed.reason || ''\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "wf0-node-005",
+      "name": "Parse Intent"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst missing = [];\nconst invalid = [];\nif (data.intent === 'BOOK') {\n  const required = ['name', 'email', 'phone', 'service', 'preferred_date', 'preferred_time'];\n  for (const key of required) {\n    if (!data[key] || String(data[key]).trim() === '') missing.push(key);\n  }\n  const date = String(data.preferred_date || '');\n  const time = String(data.preferred_time || '');\n  if (date && !/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) invalid.push('preferred_date_format');\n  if (time && !/^\\d{2}:\\d{2}$/.test(time)) invalid.push('preferred_time_format');\n}\nconst hasError = missing.length > 0 || invalid.length > 0;\nreturn [{ json: { ...data, booking_validation_error: hasError, booking_missing: missing, booking_invalid: invalid } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        0
+      ],
+      "id": "wf0-node-016",
+      "name": "Validate Booking Inputs"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "wf0-c4",
+              "leftValue": "={{ $json.booking_validation_error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        880,
+        0
+      ],
+      "id": "wf0-node-017",
+      "name": "Has Booking Errors?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: \"error\", message: \"Missing or invalid booking fields\", missing: $json.booking_missing || [], invalid: $json.booking_invalid || [] } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1100,
+        -200
+      ],
+      "id": "wf0-node-018",
+      "name": "Respond Booking Error"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "wf0-c1",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "BOOK",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        880,
+        -200
+      ],
+      "id": "wf0-node-006",
+      "name": "Is BOOK?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "wf0-c2",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "REACTIVATE",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        880,
+        200
+      ],
+      "id": "wf0-node-007",
+      "name": "Is REACTIVATE?"
+    },
+    {
+      "parameters": {
+        "workflowId": "HYrY56IwDIMwInbl",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        -300
+      ],
+      "id": "wf0-node-008",
+      "name": "→ Run WF4 Booking"
+    },
+    {
+      "parameters": {
+        "workflowId": "P0EWVNGgSRZuEVq6",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        -100
+      ],
+      "id": "wf0-node-009",
+      "name": "→ Run WF1 Lead Capture"
+    },
+    {
+      "parameters": {
+        "workflowId": "NqtJNkaE7r8CHf3x",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        100
+      ],
+      "id": "wf0-node-010",
+      "name": "→ Run WF8 Reactivation"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: \"routed\", intent: $json.intent || \"unknown\", message: \"Request received and routed successfully\" } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1320,
+        0
+      ],
+      "id": "wf0-node-012",
+      "name": "Respond OK"
+    }
+  ],
+  "connections": {
+    "Master Intake Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Input Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Input Data": {
+      "main": [
+        [
+          {
+            "node": "Validate Base Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Base Inputs": {
+      "main": [
+        [
+          {
+            "node": "Has Base Errors?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Base Errors?": {
+      "main": [
+        [
+          {
+            "node": "Respond Bad Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Intent Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Intent Classifier": {
+      "main": [
+        [
+          {
+            "node": "Parse Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Intent": {
+      "main": [
+        [
+          {
+            "node": "Validate Booking Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Booking Inputs": {
+      "main": [
+        [
+          {
+            "node": "Has Booking Errors?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Booking Errors?": {
+      "main": [
+        [
+          {
+            "node": "Respond Booking Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is BOOK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is BOOK?": {
+      "main": [
+        [
+          {
+            "node": "→ Run WF4 Booking",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is REACTIVATE?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is REACTIVATE?": {
+      "main": [
+        [
+          {
+            "node": "→ Run WF8 Reactivation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "→ Run WF1 Lead Capture",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "→ Run WF4 Booking": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "→ Run WF1 Lead Capture": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "→ Run WF8 Reactivation": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Intent Classifier",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "ai-sales-crm"
+  },
+  "id": "BestWF0",
+  "tags": [
+    {
+      "name": "AI Sales CRM"
+    }
+  ]
+}

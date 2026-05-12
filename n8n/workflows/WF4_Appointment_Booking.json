@@ -1,0 +1,561 @@
+{
+  "name": "AI Sales Agent — 4. Appointment Booking",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "wf4-a1",
+              "name": "name",
+              "value": "={{ $json.body?.name || $json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "wf4-a2",
+              "name": "email",
+              "value": "={{ $json.body?.email || $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "wf4-a3",
+              "name": "phone",
+              "value": "={{ $json.body?.phone || $json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "wf4-a4",
+              "name": "service",
+              "value": "={{ $json.body?.service || $json.service }}",
+              "type": "string"
+            },
+            {
+              "id": "wf4-a5",
+              "name": "preferred_date",
+              "value": "={{ $json.body?.preferred_date || $json.preferred_date }}",
+              "type": "string"
+            },
+            {
+              "id": "wf4-a6",
+              "name": "preferred_time",
+              "value": "={{ $json.body?.preferred_time || $json.preferred_time || '10:00' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "id": "wf4-node-002",
+      "name": "Extract Booking Data"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let date = $input.item.json.preferred_date;\nlet time = $input.item.json.preferred_time || '10:00';\n\n// Validate date format (YYYY-MM-DD)\nif (!date || typeof date !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(date.trim())) {\n  // Fallback: use tomorrow\n  const tomorrow = new Date();\n  tomorrow.setDate(tomorrow.getDate() + 1);\n  date = tomorrow.toISOString().split('T')[0];\n}\n\n// Validate time format (HH:MM)\nif (!/^\\d{2}:\\d{2}$/.test(time.trim())) {\n  time = '10:00';\n}\n\nconst startDateTime = new Date(`${date.trim()}T${time.trim()}:00`);\n\n// Final safety check\nif (isNaN(startDateTime.getTime())) {\n  throw new Error(`Cannot parse booking date/time: date='${date}', time='${time}'`);\n}\n\nconst endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000);\nconst dayStart = new Date(`${date.trim()}T00:00:00`);\nconst dayEnd = new Date(`${date.trim()}T23:59:59`);\n$input.item.json.booking_start = startDateTime.toISOString();\n$input.item.json.booking_end = endDateTime.toISOString();\n$input.item.json.day_start = dayStart.toISOString();\n$input.item.json.day_end = dayEnd.toISOString();\n$input.item.json.booking_display_date = startDateTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\n$input.item.json.booking_display_time = `${time} - ${endDateTime.toTimeString().slice(0,5)}`;\nreturn $input.item;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "wf4-node-003",
+      "name": "Build Booking DateTime"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "Primary Calendar"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        660,
+        0
+      ],
+      "id": "wf4-node-004",
+      "name": "Check Calendar Availability"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst bookingData = $('Build Booking DateTime').first().json;\nconst requestedStart = new Date(bookingData.booking_start);\nconst requestedEnd = new Date(bookingData.booking_end);\nlet isAvailable = true;\nlet conflictWith = '';\nfor (const item of items) {\n  const eventStart = item.json.start?.dateTime ? new Date(item.json.start.dateTime) : null;\n  const eventEnd = item.json.end?.dateTime ? new Date(item.json.end.dateTime) : null;\n  if (eventStart && eventEnd) {\n    if (requestedStart < eventEnd && requestedEnd > eventStart) {\n      isAvailable = false;\n      conflictWith = item.json.summary || 'Existing appointment';\n      break;\n    }\n  }\n}\nreturn [{ json: { ...bookingData, isAvailable, conflictWith } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "wf4-node-005",
+      "name": "Check Slot Availability"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "wf4-c1",
+              "leftValue": "={{ $json.isAvailable }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "wf4-node-006",
+      "name": "Slot Available?"
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "Primary Calendar"
+        },
+        "start": "={{ $json.booking_start }}",
+        "end": "={{ $json.booking_end }}",
+        "additionalFields": {
+          "summary": "=Consultation: {{ $json.name }} — {{ $json.service }}",
+          "description": "=BOOKED VIA AI SALES AGENT\n\nClient: {{ $json.name }}\nEmail: {{ $json.email }}\nPhone: {{ $json.phone }}\nService: {{ $json.service }}\n\nDate: {{ $json.booking_display_date }}\nTime: {{ $json.booking_display_time }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1320,
+        -200
+      ],
+      "id": "wf4-node-007",
+      "name": "Create Calendar Event"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Appointments",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "NAME": "={{ $('Check Slot Availability').item.json.name }}",
+            "EMAIL": "={{ $('Check Slot Availability').item.json.email }}",
+            "PHONE": "={{ $('Check Slot Availability').item.json.phone }}",
+            "SERVICE": "={{ $('Check Slot Availability').item.json.service }}",
+            "APPOINTMENT_DATE": "={{ $('Check Slot Availability').item.json.booking_start }}",
+            "REMINDER_SENT": "FALSE",
+            "STATUS": "CONFIRMED"
+          },
+          "matchingColumns": [
+            "EMAIL"
+          ],
+          "schema": []
+        },
+        "options": {
+          "matchingColumn": "EMAIL"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "EMAIL",
+              "lookupValue": "={{ $('Check Slot Availability').item.json.email }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1540,
+        -200
+      ],
+      "id": "wf4-node-008",
+      "name": "Save to Appointments Sheet"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LeadPipeline",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "EMAIL": "={{ $('Check Slot Availability').item.json.email }}",
+            "STATUS": "BOOKED",
+            "LEAD_SCORE": "HOT",
+            "BOOKED": "TRUE",
+            "LAST_CONTACT": "={{ $now.toISO() }}",
+            "NOTES": "=Booked: {{ $('Check Slot Availability').item.json.booking_display_date }} {{ $('Check Slot Availability').item.json.booking_display_time }}"
+          },
+          "matchingColumns": [
+            "EMAIL"
+          ],
+          "schema": []
+        },
+        "options": {
+          "matchingColumn": "EMAIL"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "EMAIL",
+              "lookupValue": "={{ $('Check Slot Availability').item.json.email }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1760,
+        -200
+      ],
+      "id": "wf4-node-009",
+      "name": "Update CRM to BOOKED"
+    },
+    {
+      "parameters": {
+        "fromEmail": "hithereitsme0011@gmail.com",
+        "toEmail": "={{ $('Check Slot Availability').item.json.email }}",
+        "subject": "=✅ Appointment Confirmed — {{ $('Check Slot Availability').item.json.booking_display_date }}",
+        "emailFormat": "text",
+        "text": "=Hi {{ $('Check Slot Availability').item.json.name }},\n\nYour appointment is confirmed!\n\n📅 Date: {{ $('Check Slot Availability').item.json.booking_display_date }}\n🕐 Time: {{ $('Check Slot Availability').item.json.booking_display_time }}\n💼 Service: {{ $('Check Slot Availability').item.json.service }}\n\nWe've added this to our calendar.\n\nNeed to reschedule? Just reply to this email.\n\nSee you soon!\nThe Team",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1980,
+        -300
+      ],
+      "id": "wf4-node-010",
+      "name": "Email Confirmation to Customer"
+    },
+    {
+      "parameters": {
+        "fromEmail": "hithereitsme0011@gmail.com",
+        "toEmail": "hithereitsme0011@gmail.com",
+        "subject": "=📅 NEW BOOKING: {{ $('Check Slot Availability').item.json.name }} — {{ $('Check Slot Availability').item.json.booking_display_date }}",
+        "emailFormat": "text",
+        "text": "=New appointment booked!\n\nClient: {{ $('Check Slot Availability').item.json.name }}\nEmail: {{ $('Check Slot Availability').item.json.email }}\nPhone: {{ $('Check Slot Availability').item.json.phone }}\nService: {{ $('Check Slot Availability').item.json.service }}\nDate: {{ $('Check Slot Availability').item.json.booking_display_date }}\nTime: {{ $('Check Slot Availability').item.json.booking_display_time }}\n\nCalendar event created. Customer confirmation sent.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1980,
+        -100
+      ],
+      "id": "wf4-node-011",
+      "name": "Notify Team New Booking"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Customer {{ $json.name }} requested {{ $json.booking_display_date }} at {{ $json.booking_display_time }} for {{ $json.service }}, but that slot is taken (conflicts with: {{ $json.conflictWith }}). Suggest 3 alternative times politely.",
+        "options": {
+          "systemMessage": "You are an AI Scheduling Assistant.\n\nThe requested time slot is NOT available. Your job:\n1. Apologize briefly and politely\n2. Suggest exactly 3 alternative time slots (same day different times, or next 2 days)\n3. Ask them to reply with their preferred option\n4. Keep it under 150 words\n5. Sound human and helpful\n6. Do NOT mention you are AI"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1320,
+        200
+      ],
+      "id": "wf4-node-013",
+      "name": "AI Suggest Alternatives"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        400
+      ],
+      "id": "wf4-node-014",
+      "name": "OpenAI Chat Model"
+    },
+    {
+      "parameters": {
+        "fromEmail": "hithereitsme0011@gmail.com",
+        "toEmail": "={{ $('Check Slot Availability').item.json.email }}",
+        "subject": "=Let's find another time for your appointment",
+        "emailFormat": "text",
+        "text": "={{ $json.output }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1540,
+        200
+      ],
+      "id": "wf4-node-015",
+      "name": "Email Alternative Times"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LeadPipeline",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "EMAIL": "={{ $('Check Slot Availability').item.json.email }}",
+            "STATUS": "CONTACTED",
+            "LEAD_SCORE": "HOT",
+            "LAST_CONTACT": "={{ $now.toISO() }}",
+            "NOTES": "Slot unavailable — alternatives sent"
+          },
+          "matchingColumns": [
+            "EMAIL"
+          ],
+          "schema": []
+        },
+        "options": {
+          "matchingColumn": "EMAIL"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "EMAIL",
+              "lookupValue": "={{ $('Check Slot Availability').item.json.email }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1760,
+        200
+      ],
+      "id": "wf4-node-016",
+      "name": "Log Lead Pending Reschedule"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "patch-trigger-2564",
+      "name": "Execute Workflow Trigger"
+    }
+  ],
+  "connections": {
+    "Extract Booking Data": {
+      "main": [
+        [
+          {
+            "node": "Build Booking DateTime",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Booking DateTime": {
+      "main": [
+        [
+          {
+            "node": "Check Calendar Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Calendar Availability": {
+      "main": [
+        [
+          {
+            "node": "Check Slot Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Slot Availability": {
+      "main": [
+        [
+          {
+            "node": "Slot Available?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slot Available?": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Suggest Alternatives",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Save to Appointments Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Appointments Sheet": {
+      "main": [
+        [
+          {
+            "node": "Update CRM to BOOKED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update CRM to BOOKED": {
+      "main": [
+        [
+          {
+            "node": "Email Confirmation to Customer",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Team New Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Suggest Alternatives": {
+      "main": [
+        [
+          {
+            "node": "Email Alternative Times",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Lead Pending Reschedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Alternative Times": {
+      "main": []
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Suggest Alternatives",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Booking Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "ai-sales-crm"
+  },
+  "id": "BestWF4",
+  "tags": [
+    {
+      "name": "AI Sales CRM"
+    }
+  ]
+}

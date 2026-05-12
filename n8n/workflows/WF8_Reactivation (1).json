@@ -1,0 +1,386 @@
+{
+  "name": "AI Sales Agent — 8. Reactivation Campaign",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "wf8-node-001",
+      "name": "Run Weekly"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Reactivation",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        220,
+        0
+      ],
+      "id": "wf8-node-002",
+      "name": "Get Reactivation List"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item.json;\nconst now = new Date();\nconst lastContact = item.LAST_CONTACT ? new Date(item.LAST_CONTACT) : null;\nconst daysSince = lastContact ? (now - lastContact) / (1000 * 60 * 60 * 24) : 9999;\nitem.days_since_contact = Math.round(daysSince);\nitem.eligible = daysSince >= 30 && item.EMAIL && item.REACTIVATION_SENT !== 'TRUE';\nreturn $input.item;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "wf8-node-003",
+      "name": "Check Eligibility"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "wf8-c1",
+              "leftValue": "={{ $json.eligible }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "wf8-node-004",
+      "name": "Filter Eligible for Reactivation"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Name: {{ $json.NAME }}\nService they were interested in: {{ $json.LAST_SERVICE }}\nDays since last contact: {{ $json.days_since_contact }}",
+        "options": {
+          "systemMessage": "You are a reactivation specialist writing win-back emails for cold leads.\n\nYour goal is to re-engage a lead who went cold.\n\nRules:\n1. Be genuine and warm — not desperate or pushy\n2. Reference their specific service interest naturally\n3. Offer something fresh — a new tip, insight, or seasonal offer\n4. Keep it under 100 words\n5. One clear, low-pressure call to action\n6. Sound like a real person checking in — not a marketing email\n7. Never say 'we noticed you haven't replied' or 'you went quiet'\n8. Never mention you are AI\n9. Sign as: The Team\n\nRespond with ONLY valid JSON. No markdown.\nFormat: {\"subject\": \"subject here\", \"body\": \"email body here\"}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        880,
+        0
+      ],
+      "id": "wf8-node-005",
+      "name": "AI Write Reactivation Email"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        880,
+        220
+      ],
+      "id": "wf8-node-006",
+      "name": "OpenAI Chat Model"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst raw = item.json.output || '{}';\nlet parsed;\ntry {\n  const clean = raw.replace(/```json|```/g, '').trim();\n  parsed = JSON.parse(clean);\n} catch(e) {\n  parsed = {\n    subject: 'Checking in — still interested?',\n    body: 'Hi, just wanted to reach out again. We would love to help when the time is right!'\n  };\n}\nreturn [{ json: { ...item.json, email_subject: parsed.subject, email_body: parsed.body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "wf8-node-007",
+      "name": "Parse Email"
+    },
+    {
+      "parameters": {
+        "fromEmail": "hithereitsme0011@gmail.com",
+        "toEmail": "={{ $json.EMAIL }}",
+        "subject": "={{ $json.email_subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.email_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1320,
+        -100
+      ],
+      "id": "wf8-node-008",
+      "name": "Send Reactivation Email"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Reactivation",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "EMAIL": "={{ $json.EMAIL }}",
+            "REACTIVATION_SENT": "TRUE",
+            "LAST_CONTACT": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "EMAIL"
+          ],
+          "schema": []
+        },
+        "options": {
+          "matchingColumn": "EMAIL"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "EMAIL",
+              "lookupValue": "={{ $json.EMAIL }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1320,
+        100
+      ],
+      "id": "wf8-node-009",
+      "name": "Mark Reactivation Sent"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LeadPipeline",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "EMAIL": "={{ $json.EMAIL }}",
+            "STATUS": "REACTIVATED",
+            "LAST_CONTACT": "={{ $now.toISO() }}",
+            "NOTES": "=Reactivation email sent {{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "EMAIL"
+          ],
+          "schema": []
+        },
+        "options": {
+          "matchingColumn": "EMAIL"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "EMAIL",
+              "lookupValue": "={{ $json.EMAIL }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1540,
+        0
+      ],
+      "id": "wf8-node-010",
+      "name": "Update LeadPipeline Status"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "id": "patch-trigger-9100",
+      "name": "Execute Workflow Trigger"
+    }
+  ],
+  "connections": {
+    "Run Weekly": {
+      "main": [
+        [
+          {
+            "node": "Get Reactivation List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Reactivation List": {
+      "main": [
+        [
+          {
+            "node": "Check Eligibility",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Eligibility": {
+      "main": [
+        [
+          {
+            "node": "Filter Eligible for Reactivation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Eligible for Reactivation": {
+      "main": [
+        [
+          {
+            "node": "AI Write Reactivation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Write Reactivation Email": {
+      "main": [
+        [
+          {
+            "node": "Parse Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Email": {
+      "main": [
+        [
+          {
+            "node": "Send Reactivation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reactivation Email": {
+      "main": [
+        [
+          {
+            "node": "Mark Reactivation Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Reactivation Sent": {
+      "main": [
+        [
+          {
+            "node": "Update LeadPipeline Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Write Reactivation Email",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Reactivation List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "ai-sales-crm"
+  },
+  "id": "BestWF8",
+  "tags": [
+    {
+      "name": "AI Sales CRM"
+    }
+  ]
+}

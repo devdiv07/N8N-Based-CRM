@@ -1,0 +1,424 @@
+{
+  "name": "AI Sales Agent — 3. SMS Lead Qualification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-sales/sms-qualifier",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "wf3-node-001",
+      "name": "SMS Webhook",
+      "webhookId": "wf3-webhook-001"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "wf3-a1",
+              "name": "phone",
+              "value": "={{ $json.From }}",
+              "type": "string"
+            },
+            {
+              "id": "wf3-a2",
+              "name": "sms_body",
+              "value": "={{ $json.Body }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "id": "wf3-node-002",
+      "name": "Extract SMS Data"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LeadPipeline",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "PHONE",
+              "lookupValue": "={{ $json.phone }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        440,
+        0
+      ],
+      "id": "wf3-node-003",
+      "name": "Lookup Lead in CRM"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "wf3-b1",
+              "name": "lead_history",
+              "value": "={{ $json.MESSAGE || 'No previous messages' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf3-b2",
+              "name": "lead_status",
+              "value": "={{ $json.STATUS || 'NEW' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf3-b3",
+              "name": "lead_name",
+              "value": "={{ $json.NAME || 'there' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf3-b4",
+              "name": "lead_score",
+              "value": "={{ $json.LEAD_SCORE || 'WARM' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf3-b5",
+              "name": "phone",
+              "value": "={{ $('Extract SMS Data').item.json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "wf3-b6",
+              "name": "sms_body",
+              "value": "={{ $('Extract SMS Data').item.json.sms_body }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        660,
+        0
+      ],
+      "id": "wf3-node-004",
+      "name": "Merge Lead Context"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Lead phone: {{ $json.phone }}\nLead name: {{ $json.lead_name }}\nCurrent status: {{ $json.lead_status }}\nCurrent score: {{ $json.lead_score }}\nPrevious conversation: {{ $json.lead_history }}\n\nNew SMS from lead:\n\"{{ $json.sms_body }}\"",
+        "options": {
+          "systemMessage": "You are an AI Lead Qualification Agent handling SMS conversations.\n\nYour job is to qualify leads through natural SMS conversation.\n\nQualification criteria (need ALL THREE):\n1. Clear service need identified\n2. Timeline mentioned (when do they need it)\n3. Budget of $1000 or more mentioned\n\nConversation rules:\n- Ask ONE qualifying question at a time\n- Be casual and friendly (SMS tone)\n- Keep messages under 160 characters\n- Ask about: service need → timeline → budget → name/email if missing\n- Never mention you are AI\n- Never ask multiple questions at once\n\nWhen ALL THREE criteria are met, end your reply with exactly: QUALIFIED\nIf lead says not interested, be polite and say you're here when they're ready.\n\nCurrent stage guide:\n- If no service info: ask what they need help with\n- If no timeline: ask when they're looking to get started\n- If no budget: ask about their budget range\n- If all three known: confirm and end with QUALIFIED"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        880,
+        0
+      ],
+      "id": "wf3-node-005",
+      "name": "AI Qualification Agent"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        880,
+        220
+      ],
+      "id": "wf3-node-006",
+      "name": "OpenAI Chat Model"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "wf3-c1",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "QUALIFIED",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "wf3-node-007",
+      "name": "Is Qualified?"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LeadPipeline",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "STATUS": "QUALIFIED",
+            "LEAD_SCORE": "HOT",
+            "MESSAGE": "={{ $('Merge Lead Context').item.json.sms_body }}",
+            "LAST_CONTACT": "={{ $now.toISO() }}",
+            "PHONE": "={{ $('Merge Lead Context').item.json.phone }}"
+          },
+          "matchingColumns": [
+            "PHONE"
+          ],
+          "schema": []
+        },
+        "options": {
+          "matchingColumn": "PHONE"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "PHONE",
+              "lookupValue": "={{ $('Merge Lead Context').item.json.phone }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1320,
+        -150
+      ],
+      "id": "wf3-node-008",
+      "name": "Update to QUALIFIED HOT"
+    },
+    {
+      "parameters": {
+        "fromEmail": "hithereitsme0011@gmail.com",
+        "toEmail": "hithereitsme0011@gmail.com",
+        "subject": "=🔥 HOT LEAD QUALIFIED: {{ $('Merge Lead Context').item.json.lead_name }} ({{ $('Merge Lead Context').item.json.phone }})",
+        "emailFormat": "text",
+        "text": "=A lead just qualified via SMS!\n\nPhone: {{ $('Merge Lead Context').item.json.phone }}\nName: {{ $('Merge Lead Context').item.json.lead_name }}\nLatest message: \"{{ $('Merge Lead Context').item.json.sms_body }}\"\n\nAI Assessment: {{ $json.output }}\n\n⚡ This lead is HOT — follow up NOW to book them!",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1540,
+        -150
+      ],
+      "id": "wf3-node-009",
+      "name": "Alert Team Hot Lead"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LeadPipeline",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "STATUS": "CONTACTED",
+            "MESSAGE": "={{ $('Merge Lead Context').item.json.sms_body }}",
+            "LAST_CONTACT": "={{ $now.toISO() }}",
+            "PHONE": "={{ $('Merge Lead Context').item.json.phone }}"
+          },
+          "matchingColumns": [
+            "PHONE"
+          ],
+          "schema": []
+        },
+        "options": {
+          "matchingColumn": "PHONE"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "PHONE",
+              "lookupValue": "={{ $('Merge Lead Context').item.json.phone }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1320,
+        150
+      ],
+      "id": "wf3-node-010",
+      "name": "Update to CONTACTED"
+    }
+  ],
+  "connections": {
+    "SMS Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract SMS Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract SMS Data": {
+      "main": [
+        [
+          {
+            "node": "Lookup Lead in CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Lead in CRM": {
+      "main": [
+        [
+          {
+            "node": "Merge Lead Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Lead Context": {
+      "main": [
+        [
+          {
+            "node": "AI Qualification Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Qualification Agent": {
+      "main": [
+        [
+          {
+            "node": "Is Qualified?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Qualified?": {
+      "main": [
+        [
+          {
+            "node": "Update to QUALIFIED HOT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update to CONTACTED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update to QUALIFIED HOT": {
+      "main": [
+        [
+          {
+            "node": "Alert Team Hot Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update to CONTACTED": {
+      "main": []
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Qualification Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "ai-sales-crm"
+  },
+  "id": "BestWF3",
+  "tags": [
+    {
+      "name": "AI Sales CRM"
+    }
+  ]
+}

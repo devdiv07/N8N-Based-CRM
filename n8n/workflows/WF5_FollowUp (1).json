@@ -1,0 +1,483 @@
+{
+  "name": "AI Sales Agent — 5. Follow-Up Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "wf5-node-001",
+      "name": "Daily 9AM Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LeadPipeline",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        220,
+        0
+      ],
+      "id": "wf5-node-002",
+      "name": "Get All Leads"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "wf5-c1",
+              "leftValue": "={{ $json.BOOKED }}",
+              "rightValue": "TRUE",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "wf5-c2",
+              "leftValue": "={{ $json.STATUS }}",
+              "rightValue": "COLD",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "wf5-c3",
+              "leftValue": "={{ $json.EMAIL }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "wf5-c4",
+              "leftValue": "={{ parseInt($json.FOLLOW_UP_COUNT || '0') }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "wf5-node-003",
+      "name": "Filter Eligible for Follow-Up"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const lastContact = $input.item.json.LAST_CONTACT;\nconst now = new Date();\nconst last = lastContact ? new Date(lastContact) : new Date(0);\nconst hoursSinceContact = (now.getTime() - last.getTime()) / (1000 * 60 * 60);\n$input.item.json.hours_since_contact = hoursSinceContact;\n$input.item.json.eligible = hoursSinceContact >= 24;\n$input.item.json.attempt_number = parseInt($input.item.json.FOLLOW_UP_COUNT || '0') + 1;\nreturn $input.item;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "wf5-node-004",
+      "name": "Check Time Since Last Contact"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "wf5-c5",
+              "leftValue": "={{ $json.eligible }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "wf5-node-005",
+      "name": "Only 24h+ Since Contact"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Write a follow-up email for this lead:\n\nName: {{ $json.NAME }}\nEmail: {{ $json.EMAIL }}\nService interested in: {{ $json.SERVICE || 'our services' }}\nCurrent status: {{ $json.STATUS }}\nFollow-up attempt: {{ $json.attempt_number }} of 3\nHours since last contact: {{ Math.round($json.hours_since_contact) }}\nPrevious notes: {{ $json.NOTES || 'None' }}",
+        "options": {
+          "systemMessage": "You are an AI Sales Follow-Up Agent writing personalized follow-up emails.\n\nRules by attempt number:\n\nATTEMPT 1 — Friendly Check-In:\n- Warm and casual tone\n- Reference their specific service interest\n- Offer to answer any questions\n- Light call-to-action to book a call\n\nATTEMPT 2 — Value Add:\n- Add soft urgency (limited availability)\n- Mention a specific benefit\n- More direct CTA — offer a specific next step\n\nATTEMPT 3 — Final Reach-Out:\n- Direct but respectful\n- Create FOMO — this is the last follow-up\n- Strong CTA\n- Say this is the final automated message\n\nRules:\n- Write ONLY the email body. No subject line.\n- Under 150 words\n- Do NOT mention you are AI\n- Sign as: The Team\n- Sound like a real human"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "wf5-node-006",
+      "name": "AI Follow-Up Agent"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        220
+      ],
+      "id": "wf5-node-007",
+      "name": "OpenAI Chat Model"
+    },
+    {
+      "parameters": {
+        "fromEmail": "hithereitsme0011@gmail.com",
+        "toEmail": "={{ $('Only 24h+ Since Contact').item.json.EMAIL }}",
+        "subject": "={{ $('Only 24h+ Since Contact').item.json.attempt_number === 1 ? 'Quick question about ' + ($('Only 24h+ Since Contact').item.json.SERVICE || 'your inquiry') : $('Only 24h+ Since Contact').item.json.attempt_number === 2 ? 'Don\\'t miss out — ' + ($('Only 24h+ Since Contact').item.json.SERVICE || 'special offer') : 'Final follow-up — ' + $('Only 24h+ Since Contact').item.json.NAME }}",
+        "emailFormat": "text",
+        "text": "={{ $json.output }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1320,
+        0
+      ],
+      "id": "wf5-node-008",
+      "name": "Send Follow-Up Email"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LeadPipeline",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "EMAIL": "={{ $('Only 24h+ Since Contact').item.json.EMAIL }}",
+            "STATUS": "={{ $('Only 24h+ Since Contact').item.json.attempt_number >= 3 ? 'COLD' : 'FOLLOWING_UP' }}",
+            "FOLLOW_UP_COUNT": "={{ $('Only 24h+ Since Contact').item.json.attempt_number }}",
+            "LAST_CONTACT": "={{ $now.toISO() }}",
+            "NOTES": "=Follow-up #{{ $('Only 24h+ Since Contact').item.json.attempt_number }} sent {{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "EMAIL"
+          ],
+          "schema": []
+        },
+        "options": {
+          "matchingColumn": "EMAIL"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "EMAIL",
+              "lookupValue": "={{ $('Only 24h+ Since Contact').item.json.EMAIL }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1540,
+        0
+      ],
+      "id": "wf5-node-009",
+      "name": "Update CRM Follow-Up Status"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "wf5-c6",
+              "leftValue": "={{ $('Only 24h+ Since Contact').item.json.attempt_number }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1760,
+        0
+      ],
+      "id": "wf5-node-010",
+      "name": "Was Final Attempt?"
+    },
+    {
+      "parameters": {
+        "fromEmail": "hithereitsme0011@gmail.com",
+        "toEmail": "hithereitsme0011@gmail.com",
+        "subject": "=🥶 LEAD GONE COLD: {{ $('Only 24h+ Since Contact').item.json.NAME }} — 3 attempts no response",
+        "emailFormat": "text",
+        "text": "=Lead marked COLD after 3 follow-up attempts.\n\nName: {{ $('Only 24h+ Since Contact').item.json.NAME }}\nEmail: {{ $('Only 24h+ Since Contact').item.json.EMAIL }}\nPhone: {{ $('Only 24h+ Since Contact').item.json.PHONE }}\nService: {{ $('Only 24h+ Since Contact').item.json.SERVICE }}\n\nNo more automated follow-ups will be sent.\nConsider manual outreach or move to Reactivation campaign.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1980,
+        -100
+      ],
+      "id": "wf5-node-011",
+      "name": "Alert Team Lead Gone Cold"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Reactivation",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "NAME": "={{ $('Only 24h+ Since Contact').item.json.NAME }}",
+            "EMAIL": "={{ $('Only 24h+ Since Contact').item.json.EMAIL }}",
+            "PHONE": "={{ $('Only 24h+ Since Contact').item.json.PHONE }}",
+            "LAST_SERVICE": "={{ $('Only 24h+ Since Contact').item.json.SERVICE }}",
+            "LAST_CONTACT": "={{ $now.toISO() }}",
+            "REACTIVATION_SENT": "FALSE"
+          },
+          "matchingColumns": [
+            "EMAIL"
+          ],
+          "schema": []
+        },
+        "options": {
+          "matchingColumn": "EMAIL"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "EMAIL",
+              "lookupValue": "={{ $('Only 24h+ Since Contact').item.json.EMAIL }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1980,
+        100
+      ],
+      "id": "wf5-node-012",
+      "name": "Move to Reactivation Tab"
+    }
+  ],
+  "connections": {
+    "Daily 9AM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get All Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Leads": {
+      "main": [
+        [
+          {
+            "node": "Filter Eligible for Follow-Up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Eligible for Follow-Up": {
+      "main": [
+        [
+          {
+            "node": "Check Time Since Last Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Time Since Last Contact": {
+      "main": [
+        [
+          {
+            "node": "Only 24h+ Since Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only 24h+ Since Contact": {
+      "main": [
+        [
+          {
+            "node": "AI Follow-Up Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Follow-Up Agent": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-Up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-Up Email": {
+      "main": [
+        [
+          {
+            "node": "Update CRM Follow-Up Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update CRM Follow-Up Status": {
+      "main": [
+        [
+          {
+            "node": "Was Final Attempt?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Was Final Attempt?": {
+      "main": [
+        [
+          {
+            "node": "Alert Team Lead Gone Cold",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Move to Reactivation Tab",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Follow-Up Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "ai-sales-crm"
+  },
+  "id": "BestWF5",
+  "tags": [
+    {
+      "name": "AI Sales CRM"
+    }
+  ]
+}

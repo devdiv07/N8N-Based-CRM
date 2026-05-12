@@ -1,0 +1,382 @@
+{
+  "name": "AI Sales Agent — 2. Missed Call Text-Back",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-sales/missed-call",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "wf2-node-001",
+      "name": "Missed Call Webhook",
+      "webhookId": "wf2-webhook-001"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "wf2-c1",
+              "leftValue": "={{ $json.CallStatus }}",
+              "rightValue": "no-answer",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        220,
+        0
+      ],
+      "id": "wf2-node-002",
+      "name": "Is Missed Call?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "wf2-a1",
+              "name": "phone",
+              "value": "={{ $json.From }}",
+              "type": "string"
+            },
+            {
+              "id": "wf2-a2",
+              "name": "caller_name",
+              "value": "={{ $json.CallerName || 'Unknown Caller' }}",
+              "type": "string"
+            },
+            {
+              "id": "wf2-a3",
+              "name": "source",
+              "value": "phone",
+              "type": "string"
+            },
+            {
+              "id": "wf2-a4",
+              "name": "created_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        -100
+      ],
+      "id": "wf2-node-003",
+      "name": "Extract Caller Data"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LeadPipeline",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "NAME": "={{ $json.caller_name }}",
+            "PHONE": "={{ $json.phone }}",
+            "SOURCE": "phone",
+            "STATUS": "NEW",
+            "MESSAGE": "Missed call — automated text-back sent",
+            "LEAD_SCORE": "WARM",
+            "BOOKED": "FALSE",
+            "CREATED_AT": "={{ $json.created_at }}",
+            "LAST_CONTACT": "={{ $json.created_at }}",
+            "FOLLOW_UP_COUNT": "0"
+          },
+          "matchingColumns": [
+            "PHONE"
+          ],
+          "schema": []
+        },
+        "options": {
+          "matchingColumn": "PHONE"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "PHONE",
+              "lookupValue": "={{ $json.phone }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        660,
+        -100
+      ],
+      "id": "wf2-node-004",
+      "name": "Log Lead to CRM"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=A potential customer called from {{ $('Extract Caller Data').item.json.phone }} but we missed the call. Their name (if known) is {{ $('Extract Caller Data').item.json.caller_name }}. Generate a warm, professional text-back message.",
+        "options": {
+          "systemMessage": "You are an AI Sales Assistant. A potential customer just called but no one answered.\n\nGenerate a SHORT SMS text message (under 160 characters) that:\n1. Apologizes briefly for missing the call\n2. Asks how you can help them today\n3. Offers to schedule a callback\n4. Sounds friendly and human — like a real text from a real person\n\nDo NOT mention you are AI.\nDo NOT use formal language.\nKeep it casual and conversational."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        880,
+        -100
+      ],
+      "id": "wf2-node-005",
+      "name": "AI Text-Back Agent"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        880,
+        120
+      ],
+      "id": "wf2-node-006",
+      "name": "OpenAI Chat Model"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "wf2-b1",
+              "name": "textback_message",
+              "value": "={{ $json.output }}",
+              "type": "string"
+            },
+            {
+              "id": "wf2-b2",
+              "name": "phone",
+              "value": "={{ $('Extract Caller Data').item.json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "wf2-b3",
+              "name": "caller_name",
+              "value": "={{ $('Extract Caller Data').item.json.caller_name }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1100,
+        -100
+      ],
+      "id": "wf2-node-007",
+      "name": "Format Text-Back"
+    },
+    {
+      "parameters": {
+        "fromEmail": "hithereitsme0011@gmail.com",
+        "toEmail": "hithereitsme0011@gmail.com",
+        "subject": "=📞 Missed Call: {{ $json.caller_name }} ({{ $json.phone }})",
+        "emailFormat": "text",
+        "text": "=MISSED CALL ALERT\n\nCaller: {{ $json.caller_name }}\nPhone: {{ $json.phone }}\nTime: {{ $now.toISO() }}\n\nAutomated text-back sent:\n\"{{ $json.textback_message }}\"\n\nLead has been logged to CRM. Follow up if they respond.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1320,
+        -200
+      ],
+      "id": "wf2-node-008",
+      "name": "Notify Team"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LeadPipeline",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "STATUS": "CONTACTED",
+            "LAST_CONTACT": "={{ $now.toISO() }}",
+            "PHONE": "={{ $('Extract Caller Data').item.json.phone }}"
+          },
+          "matchingColumns": [
+            "PHONE"
+          ],
+          "schema": []
+        },
+        "options": {
+          "matchingColumn": "PHONE"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "PHONE",
+              "lookupValue": "={{ $('Extract Caller Data').item.json.phone }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1540,
+        -100
+      ],
+      "id": "wf2-node-010",
+      "name": "Update Status to CONTACTED"
+    }
+  ],
+  "connections": {
+    "Missed Call Webhook": {
+      "main": [
+        [
+          {
+            "node": "Is Missed Call?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Missed Call?": {
+      "main": [
+        [
+          {
+            "node": "Extract Caller Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Extract Caller Data": {
+      "main": [
+        [
+          {
+            "node": "Log Lead to CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Lead to CRM": {
+      "main": [
+        [
+          {
+            "node": "AI Text-Back Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Text-Back Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Text-Back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Text-Back": {
+      "main": [
+        [
+          {
+            "node": "Notify Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Team": {
+      "main": [
+        [
+          {
+            "node": "Update Status to CONTACTED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Text-Back Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "ai-sales-crm"
+  },
+  "id": "BestWF2",
+  "tags": [
+    {
+      "name": "AI Sales CRM"
+    }
+  ]
+}
