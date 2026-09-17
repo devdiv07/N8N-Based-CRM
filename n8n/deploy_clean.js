@@ -2,12 +2,10 @@ const fs = require('fs');
 const path = require('path');
 
 const API_KEY = process.env.N8N_API_KEY;
-if (!API_KEY) {
-  console.error('ERROR: N8N_API_KEY environment variable is not set.');
-  console.error('Set it with: $env:N8N_API_KEY = "your-api-key-here"');
-  process.exit(1);
-}
-const BASE = 'http://localhost:5678/api/v1';
+const N8N_BASE_URL = (process.env.N8N_BASE_URL || 'http://localhost:5678').replace(/\/$/, '');
+const BASE = `${N8N_BASE_URL}/api/v1`;
+const APPLY = process.argv.includes('--apply');
+const WORKFLOW_DIR = path.join(__dirname, 'workflows');
 
 const WF_FILES = {
   WF0: 'WF0_Orchestrator (3).json',
@@ -21,42 +19,65 @@ const WF_FILES = {
   WF8: 'WF8_Reactivation (1).json',
 };
 
-// ── API Helper ──────────────────────────────────────────────
+function fail(message) {
+  console.error(`ERROR: ${message}`);
+  process.exit(1);
+}
+
+if (typeof fetch !== 'function') {
+  fail('This script requires Node.js 18+ (global fetch is unavailable).');
+}
+
+if (APPLY && !API_KEY) {
+  fail('N8N_API_KEY must be set when running with --apply.');
+}
+
 async function api(method, endpoint, body) {
   const opts = {
     method,
-    headers: { 'X-N8N-API-KEY': API_KEY, 'Content-Type': 'application/json' },
+    headers: {
+      'X-N8N-API-KEY': API_KEY,
+      'Content-Type': 'application/json',
+    },
   };
-  if (body) opts.body = JSON.stringify(body);
+  if (body !== undefined) opts.body = JSON.stringify(body);
+
   const res = await fetch(`${BASE}${endpoint}`, opts);
   const text = await res.text();
   let data;
-  try { data = JSON.parse(text); } catch { data = text; }
-  return { ok: res.ok, status: res.status, data };
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
+  if (!res.ok) {
+    throw new Error(`${method} ${endpoint} failed with HTTP ${res.status}: ${JSON.stringify(data)}`);
+  }
+
+  return data;
 }
 
-// ── Bug Fix Functions ───────────────────────────────────────
+function workflowPath(filename) {
+  return path.join(WORKFLOW_DIR, filename);
+}
 
 function fixTriggerWiring(wf, targetNodeName) {
-  // BUG 2 FIX: Execute Workflow Trigger should connect ONLY to the
-  // first data-processing node, NOT the OpenAI Chat Model
   if (wf.connections['Execute Workflow Trigger']) {
     wf.connections['Execute Workflow Trigger'] = {
-      main: [[{ node: targetNodeName, type: 'main', index: 0 }]]
+      main: [[{ node: targetNodeName, type: 'main', index: 0 }]],
     };
   }
 }
 
 function removeExecuteTrigger(wf) {
-  // Remove unnecessary Execute Workflow Trigger from standalone workflows
-  // (ones with their own webhook or schedule trigger)
-  wf.nodes = wf.nodes.filter(n => n.type !== 'n8n-nodes-base.executeWorkflowTrigger');
+  wf.nodes = wf.nodes.filter(
+    (node) => node.type !== 'n8n-nodes-base.executeWorkflowTrigger'
+  );
   delete wf.connections['Execute Workflow Trigger'];
 }
 
 function fixGSheetsNode(node, matchCol, lookupExpr) {
-  // BUG 3 FIX: Make options.matchingColumn and filtersUI consistent
-  // with matchingColumns
   if (node.parameters.options) {
     node.parameters.options.matchingColumn = matchCol;
   }
@@ -66,35 +87,27 @@ function fixGSheetsNode(node, matchCol, lookupExpr) {
   }
 }
 
-// ── Apply All Fixes Per Workflow ────────────────────────────
-
 function applyFixes(key, wf) {
   switch (key) {
     case 'WF1':
-      // FIX: Trigger wired to OpenAI AND Extract Lead Data → only Extract Lead Data
       fixTriggerWiring(wf, 'Extract Lead Data');
       break;
 
     case 'WF2':
-      // FIX: Remove unnecessary execute trigger (WF2 is standalone via webhook)
       removeExecuteTrigger(wf);
-      // FIX: GSheets nodes match by PHONE but options/filters say EMAIL
       for (const node of wf.nodes) {
         if (node.name === 'Log Lead to CRM') {
-          fixGSheetsNode(node, 'PHONE', "={{ $json.phone }}");
+          fixGSheetsNode(node, 'PHONE', '={{ $json.phone }}');
         }
         if (node.name === 'Update Status to CONTACTED') {
           fixGSheetsNode(node, 'PHONE', "={{ $('Extract Caller Data').item.json.phone }}");
-          // Ensure PHONE is in the update payload for matching
           node.parameters.columns.value.PHONE = "={{ $('Extract Caller Data').item.json.phone }}";
         }
       }
       break;
 
     case 'WF3':
-      // FIX: Remove unnecessary execute trigger (WF3 is standalone via webhook)
       removeExecuteTrigger(wf);
-      // FIX: GSheets nodes match by PHONE but options/filters say EMAIL
       for (const node of wf.nodes) {
         if (node.name === 'Update to QUALIFIED HOT') {
           fixGSheetsNode(node, 'PHONE', "={{ $('Merge Lead Context').item.json.phone }}");
@@ -108,108 +121,150 @@ function applyFixes(key, wf) {
       break;
 
     case 'WF4':
-      // FIX: Trigger wired to OpenAI AND Extract Booking Data → only Extract Booking Data
       fixTriggerWiring(wf, 'Extract Booking Data');
       break;
 
     case 'WF5':
-      // FIX: Remove unnecessary execute trigger (WF5 is standalone via schedule)
       removeExecuteTrigger(wf);
       break;
 
     case 'WF6':
-      // FIX: Remove unnecessary execute trigger (WF6 is standalone via schedule)
       removeExecuteTrigger(wf);
-      // BUG 4 FIX: Race condition — email and mark-sent fire in parallel.
-      // Make sequential: Filter → Send Email → Mark Sent
       wf.connections['Filter Who Needs Reminder'] = {
-        main: [[{ node: 'Send 24h Reminder Email', type: 'main', index: 0 }]]
+        main: [[{ node: 'Send 24h Reminder Email', type: 'main', index: 0 }]],
       };
       wf.connections['Send 24h Reminder Email'] = {
-        main: [[{ node: 'Mark Reminder Sent', type: 'main', index: 0 }]]
+        main: [[{ node: 'Mark Reminder Sent', type: 'main', index: 0 }]],
       };
       break;
 
     case 'WF7':
-      // FIX: Remove unnecessary execute trigger (WF7 is standalone via schedule)
       removeExecuteTrigger(wf);
       break;
 
     case 'WF8':
-      // FIX: Trigger wired to OpenAI → should go to Get Reactivation List
       fixTriggerWiring(wf, 'Get Reactivation List');
       break;
   }
+
   return wf;
 }
 
-// ── Main Deploy Pipeline ────────────────────────────────────
+function loadWorkflows() {
+  const workflows = {};
 
-async function main() {
-  console.log('');
-  console.log('══════════════════════════════════════════════════');
-  console.log('   AI Sales CRM — Clean Deploy & Bug Fix');
-  console.log('══════════════════════════════════════════════════');
-  console.log('');
+  for (const [key, filename] of Object.entries(WF_FILES)) {
+    const filePath = workflowPath(filename);
+    if (!fs.existsSync(filePath)) {
+      fail(`Workflow file not found: ${filePath}`);
+    }
 
-  // ── STEP 1: Delete ALL existing workflows from n8n ────────
-  console.log('STEP 1: Deleting all existing workflows from n8n...');
-  const { data: listData } = await api('GET', '/workflows');
-  const existing = listData.data || [];
-  console.log(`  Found ${existing.length} workflows to remove.`);
+    let wf;
+    try {
+      wf = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch (error) {
+      fail(`Could not parse ${filePath}: ${error.message}`);
+    }
 
-  let deleted = 0;
-  for (const wf of existing) {
+    if (!wf.name || !Array.isArray(wf.nodes) || typeof wf.connections !== 'object') {
+      fail(`Workflow ${filename} is missing name/nodes/connections.`);
+    }
+
+    workflows[key] = applyFixes(key, wf);
+  }
+
+  return workflows;
+}
+
+function saveWorkflows(workflows) {
+  for (const [key, wf] of Object.entries(workflows)) {
+    fs.writeFileSync(
+      workflowPath(WF_FILES[key]),
+      `${JSON.stringify(wf, null, 2)}\n`,
+      'utf8'
+    );
+  }
+}
+
+function payloadFor(wf) {
+  return {
+    name: wf.name,
+    nodes: wf.nodes,
+    connections: wf.connections,
+    settings: wf.settings || {},
+  };
+}
+
+async function removeExistingProjectWorkflows(projectNames) {
+  const listData = await api('GET', '/workflows');
+  const existing = Array.isArray(listData?.data) ? listData.data : [];
+  const matches = existing.filter((wf) => projectNames.has(wf.name));
+
+  console.log(`Found ${matches.length} existing workflow(s) belonging to this project.`);
+
+  for (const wf of matches) {
     if (wf.active) {
       await api('PATCH', `/workflows/${wf.id}`, { active: false });
     }
-    const { ok } = await api('DELETE', `/workflows/${wf.id}`);
-    if (ok) deleted++;
+    await api('DELETE', `/workflows/${wf.id}`);
+    console.log(`  removed: ${wf.name} (${wf.id})`);
   }
-  console.log(`  ✅ Deleted ${deleted}/${existing.length} workflows.\n`);
+}
 
-  // ── STEP 2: Load, fix, and save all workflow JSONs ────────
-  console.log('STEP 2: Loading and applying bug fixes to workflow JSONs...');
-  const workflows = {};
-  for (const [key, filename] of Object.entries(WF_FILES)) {
-    const filePath = path.join(__dirname, filename);
-    let wf = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    wf = applyFixes(key, wf);
-    workflows[key] = wf;
+async function uploadWorkflow(key, wf) {
+  const data = await api('POST', '/workflows', payloadFor(wf));
+  if (!data?.id) {
+    throw new Error(`${key} upload returned no workflow id.`);
+  }
+  console.log(`  uploaded: ${key} — ${wf.name} (${data.id})`);
+  return data.id;
+}
 
-    // Save fixed version back to disk
-    fs.writeFileSync(filePath, JSON.stringify(wf, null, 2), 'utf8');
-    console.log(`  ✅ ${key}: "${wf.name}" — fixed & saved`);
+async function main() {
+  console.log('');
+  console.log('AI Sales CRM — scoped clean deploy');
+  console.log('==================================');
+  console.log(`n8n: ${N8N_BASE_URL}`);
+  console.log(`mode: ${APPLY ? 'APPLY' : 'DRY RUN'}`);
+  console.log('');
+
+  const workflows = loadWorkflows();
+  const projectNames = new Set(Object.values(workflows).map((wf) => wf.name));
+
+  console.log('Local workflows:');
+  for (const [key, wf] of Object.entries(workflows)) {
+    console.log(`  ${key}: ${wf.name}`);
   }
   console.log('');
 
-  // ── STEP 3: Upload sub-workflows first (WF1–WF8) ─────────
-  console.log('STEP 3: Uploading sub-workflows (WF1–WF8)...');
-  const newIds = {};
+  if (!APPLY) {
+    console.log('Dry run complete. No local files or remote workflows were changed.');
+    console.log('Run with --apply to save local fixes and replace only workflows with matching project names.');
+    return;
+  }
 
-  for (const key of ['WF1','WF2','WF3','WF4','WF5','WF6','WF7','WF8']) {
-    const wf = workflows[key];
-    const payload = {
-      name: wf.name,
-      nodes: wf.nodes,
-      connections: wf.connections,
-      settings: wf.settings || {},
-    };
-    const { ok, data } = await api('POST', '/workflows', payload);
-    if (ok) {
-      newIds[key] = data.id;
-      console.log(`  ✅ ${key}: "${wf.name}" → ID: ${data.id}`);
-    } else {
-      console.error(`  ❌ ${key}: FAILED —`, data);
+  saveWorkflows(workflows);
+  console.log('Saved validated workflow fixes under n8n/workflows/.');
+  console.log('');
+
+  console.log('Removing only existing workflows whose names match this project...');
+  await removeExistingProjectWorkflows(projectNames);
+  console.log('');
+
+  const newIds = {};
+  console.log('Uploading sub-workflows...');
+  for (const key of ['WF1', 'WF2', 'WF3', 'WF4', 'WF5', 'WF6', 'WF7', 'WF8']) {
+    newIds[key] = await uploadWorkflow(key, workflows[key]);
+  }
+
+  const requiredSubflows = ['WF1', 'WF4', 'WF8'];
+  for (const key of requiredSubflows) {
+    if (!newIds[key]) {
+      throw new Error(`Cannot upload orchestrator: missing ${key} workflow id.`);
     }
   }
-  console.log('');
 
-  // ── STEP 4: Patch WF0 Orchestrator with correct IDs ──────
-  console.log('STEP 4: Patching Orchestrator (WF0) with correct sub-workflow IDs...');
   const wf0 = workflows.WF0;
-
-  // Map node names to the correct new workflow IDs
   const idPatchMap = {
     '→ Run WF1 Lead Capture': newIds.WF1,
     '→ Run WF4 Booking': newIds.WF4,
@@ -218,69 +273,34 @@ async function main() {
 
   for (const node of wf0.nodes) {
     if (idPatchMap[node.name]) {
-      const oldId = node.parameters.workflowId;
       node.parameters.workflowId = idPatchMap[node.name];
-      console.log(`  ${node.name}: ${oldId} → ${idPatchMap[node.name]}`);
     }
   }
 
-  // Save patched WF0 to disk
   fs.writeFileSync(
-    path.join(__dirname, WF_FILES.WF0),
-    JSON.stringify(wf0, null, 2),
+    workflowPath(WF_FILES.WF0),
+    `${JSON.stringify(wf0, null, 2)}\n`,
     'utf8'
   );
-  console.log('  ✅ WF0 patched and saved to disk.\n');
 
-  // ── STEP 5: Upload WF0 Orchestrator ───────────────────────
-  console.log('STEP 5: Uploading Orchestrator (WF0)...');
-  const wf0Payload = {
-    name: wf0.name,
-    nodes: wf0.nodes,
-    connections: wf0.connections,
-    settings: wf0.settings || {},
-  };
-  const { ok: wf0Ok, data: wf0Data } = await api('POST', '/workflows', wf0Payload);
-  if (wf0Ok) {
-    newIds.WF0 = wf0Data.id;
-    console.log(`  ✅ WF0: "${wf0.name}" → ID: ${wf0Data.id}\n`);
-  } else {
-    console.error(`  ❌ WF0: FAILED —`, wf0Data);
-    return;
-  }
+  console.log('');
+  console.log('Uploading orchestrator with fresh sub-workflow IDs...');
+  newIds.WF0 = await uploadWorkflow('WF0', wf0);
 
-  // ── STEP 6: Activate all workflows ────────────────────────
-  console.log('STEP 6: Activating all workflows...');
+  console.log('');
+  console.log('Activating uploaded workflows...');
   for (const [key, id] of Object.entries(newIds)) {
-    const { ok } = await api('PATCH', `/workflows/${id}`, { active: true });
-    console.log(`  ${ok ? '✅' : '❌'} ${key} (${id}): ${ok ? 'ACTIVE' : 'FAILED'}`);
+    await api('PATCH', `/workflows/${id}`, { active: true });
+    console.log(`  active: ${key} (${id})`);
   }
-  console.log('');
 
-  // ── SUMMARY ───────────────────────────────────────────────
-  console.log('══════════════════════════════════════════════════');
-  console.log('   DEPLOYMENT COMPLETE');
-  console.log('══════════════════════════════════════════════════');
   console.log('');
-  console.log('Workflow ID Map:');
-  for (const [key, id] of Object.entries(newIds)) {
-    console.log(`  ${key}: ${id}`);
-  }
-  console.log('');
-  console.log('Bugs Fixed:');
-  console.log('  ✅ BUG 1: Orchestrator workflow IDs updated to new uploads');
-  console.log('  ✅ BUG 2: Execute Workflow Triggers wired to correct nodes (WF1,WF4,WF8)');
-  console.log('  ✅ BUG 2b: Unnecessary Execute Triggers removed (WF2,WF3,WF5,WF6,WF7)');
-  console.log('  ✅ BUG 3: Google Sheets PHONE matching fixed (WF2,WF3)');
-  console.log('  ✅ BUG 4: WF6 reminder race condition fixed (now sequential)');
-  console.log('  ✅ BUG 5: Empty trigger connections cleaned up');
-  console.log('  ✅ BUG 6: All duplicate workflows deleted');
-  console.log('');
-  console.log('Next: Run "node test_intake.js" to test the full pipeline.');
-  console.log('');
+  console.log('Deployment complete.');
+  console.log('Only workflows with names matching this project were replaced.');
+  console.log('Next: run "node n8n/test_all.js all" from the repository root.');
 }
 
-main().catch(err => {
-  console.error('FATAL ERROR:', err);
+main().catch((error) => {
+  console.error(`FATAL: ${error.message}`);
   process.exit(1);
 });
