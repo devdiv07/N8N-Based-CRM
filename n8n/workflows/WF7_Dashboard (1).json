@@ -1,166 +1,21 @@
 {
-  "name": "AI Sales Agent — 7. Lead Dashboard Report",
-  "nodes": [
-    {
-      "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "hours",
-              "hoursInterval": 24
-            }
-          ]
-        }
-      },
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
-      "position": [
-        0,
-        0
-      ],
-      "id": "wf7-node-001",
-      "name": "Daily Report Trigger"
-    },
-    {
-      "parameters": {
-        "documentId": {
-          "__rl": true,
-          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "LeadPipeline",
-          "mode": "name"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
-      "position": [
-        220,
-        -100
-      ],
-      "id": "wf7-node-002",
-      "name": "Get All Leads"
-    },
-    {
-      "parameters": {
-        "documentId": {
-          "__rl": true,
-          "value": "1RVCaFsjWKDItYhARAzlZl9D6PT5arCxHZ82dEooPXbc",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Appointments",
-          "mode": "name"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
-      "position": [
-        220,
-        100
-      ],
-      "id": "wf7-node-003",
-      "name": "Get All Appointments"
-    },
-    {
-      "parameters": {
-        "jsCode": "const leads = $('Get All Leads').all().map(i => i.json);\nconst appointments = $('Get All Appointments').all().map(i => i.json);\nconst now = new Date();\nconst today = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\nconst last7days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\n// Lead stats\nconst totalLeads = leads.length;\nconst newLeads = leads.filter(l => l.STATUS === 'NEW').length;\nconst hotLeads = leads.filter(l => l.LEAD_SCORE === 'HOT').length;\nconst warmLeads = leads.filter(l => l.LEAD_SCORE === 'WARM').length;\nconst coldLeads = leads.filter(l => l.LEAD_SCORE === 'COLD' || l.STATUS === 'COLD').length;\nconst qualifiedLeads = leads.filter(l => l.STATUS === 'QUALIFIED').length;\nconst bookedLeads = leads.filter(l => l.BOOKED === 'TRUE').length;\nconst followingUp = leads.filter(l => l.STATUS === 'FOLLOWING_UP').length;\nconst conversionRate = totalLeads > 0 ? ((bookedLeads / totalLeads) * 100).toFixed(1) : 0;\n\n// New this week\nconst newThisWeek = leads.filter(l => {\n  const created = l.CREATED_AT ? new Date(l.CREATED_AT) : null;\n  return created && created >= last7days;\n}).length;\n\n// Source breakdown\nconst sources = {};\nleads.forEach(l => {\n  const src = l.SOURCE || 'unknown';\n  sources[src] = (sources[src] || 0) + 1;\n});\nconst sourceLines = Object.entries(sources).map(([k,v]) => `  ${k}: ${v}`).join('\\n');\n\n// Appointment stats\nconst totalAppts = appointments.length;\nconst confirmedAppts = appointments.filter(a => a.STATUS === 'CONFIRMED').length;\nconst upcomingAppts = appointments.filter(a => {\n  const d = a.APPOINTMENT_DATE ? new Date(a.APPOINTMENT_DATE) : null;\n  return d && d >= now;\n}).length;\n\n// Needs attention\nconst needsFollowUp = leads.filter(l => {\n  const last = l.LAST_CONTACT ? new Date(l.LAST_CONTACT) : null;\n  const hoursAgo = last ? (now - last) / (1000*60*60) : 9999;\n  return hoursAgo > 48 && l.BOOKED !== 'TRUE' && l.STATUS !== 'COLD';\n}).length;\n\nconst report = `\n================================================\n        DAILY SALES PIPELINE REPORT\n        ${today}\n================================================\n\n📊 LEAD OVERVIEW\n  Total Leads:        ${totalLeads}\n  New This Week:      ${newThisWeek}\n  New (Uncontacted):  ${newLeads}\n  Qualified:          ${qualifiedLeads}\n  Following Up:       ${followingUp}\n  Gone Cold:          ${coldLeads}\n\n🔥 LEAD SCORES\n  HOT:   ${hotLeads}\n  WARM:  ${warmLeads}\n  COLD:  ${coldLeads}\n\n📅 APPOINTMENTS\n  Total Booked:   ${bookedLeads} leads\n  Confirmed Appts: ${confirmedAppts}\n  Upcoming:       ${upcomingAppts}\n  Conversion Rate: ${conversionRate}%\n\n⚠️  NEEDS ATTENTION\n  Leads with no contact in 48h+: ${needsFollowUp}\n\n📍 LEAD SOURCES\n${sourceLines}\n\n================================================\n`;\n\nreturn [{ json: { report, totalLeads, bookedLeads, conversionRate, hotLeads, needsFollowUp, newThisWeek } }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        500,
-        0
-      ],
-      "id": "wf7-node-004",
-      "name": "Build Dashboard Report"
-    },
-    {
-      "parameters": {
-        "fromEmail": "hithereitsme0011@gmail.com",
-        "toEmail": "hithereitsme0011@gmail.com",
-        "subject": "=📊 Daily Sales Report — {{ $json.totalLeads }} Leads | {{ $json.conversionRate }}% Conversion | {{ $json.hotLeads }} HOT",
-        "emailFormat": "text",
-        "text": "={{ $json.report }}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.emailSend",
-      "typeVersion": 2.1,
-      "position": [
-        720,
-        0
-      ],
-      "id": "wf7-node-005",
-      "name": "Email Daily Report"
-    }
+  "name":"AI Sales Agent — 7. Lead Dashboard Report",
+  "nodes":[
+    {"parameters":{"rule":{"interval":[{"field":"hours","hoursInterval":24}]}},"type":"n8n-nodes-base.scheduleTrigger","typeVersion":1.2,"position":[0,0],"id":"wf7-node-001","name":"Daily Report Trigger"},
+    {"parameters":{"documentId":{"__rl":true,"value":"YOUR_GOOGLE_SHEET_ID","mode":"id"},"sheetName":{"__rl":true,"value":"LeadPipeline","mode":"name"},"options":{}},"type":"n8n-nodes-base.googleSheets","typeVersion":4.7,"position":[220,-100],"id":"wf7-node-002","name":"Get All Leads"},
+    {"parameters":{"documentId":{"__rl":true,"value":"YOUR_GOOGLE_SHEET_ID","mode":"id"},"sheetName":{"__rl":true,"value":"Appointments","mode":"name"},"options":{}},"type":"n8n-nodes-base.googleSheets","typeVersion":4.7,"position":[220,100],"id":"wf7-node-003","name":"Get All Appointments"},
+    {"parameters":{"jsCode":"const leads = $('Get All Leads').all().map(i => i.json);\nconst appointments = $('Get All Appointments').all().map(i => i.json);\nconst now = new Date();\nconst today = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\nconst last7days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nconst totalLeads = leads.length;\nconst newLeads = leads.filter(l => l.STATUS === 'NEW').length;\nconst hotLeads = leads.filter(l => l.LEAD_SCORE === 'HOT').length;\nconst warmLeads = leads.filter(l => l.LEAD_SCORE === 'WARM').length;\nconst coldLeads = leads.filter(l => l.LEAD_SCORE === 'COLD' || l.STATUS === 'COLD').length;\nconst qualifiedLeads = leads.filter(l => l.STATUS === 'QUALIFIED').length;\nconst bookedLeads = leads.filter(l => l.BOOKED === 'TRUE').length;\nconst followingUp = leads.filter(l => l.STATUS === 'FOLLOWING_UP').length;\nconst conversionRate = totalLeads > 0 ? ((bookedLeads / totalLeads) * 100).toFixed(1) : 0;\n\nconst newThisWeek = leads.filter(l => {\n  const created = l.CREATED_AT ? new Date(l.CREATED_AT) : null;\n  return created && created >= last7days;\n}).length;\n\nconst sources = {};\nleads.forEach(l => {\n  const src = l.SOURCE || 'unknown';\n  sources[src] = (sources[src] || 0) + 1;\n});\nconst sourceLines = Object.entries(sources).map(([k,v]) => `  ${k}: ${v}`).join('\\n');\n\nconst confirmedAppts = appointments.filter(a => a.STATUS === 'CONFIRMED').length;\nconst upcomingAppts = appointments.filter(a => {\n  const d = a.APPOINTMENT_DATE ? new Date(a.APPOINTMENT_DATE) : null;\n  return d && d >= now;\n}).length;\n\nconst needsFollowUp = leads.filter(l => {\n  const last = l.LAST_CONTACT ? new Date(l.LAST_CONTACT) : null;\n  const hoursAgo = last ? (now - last) / (1000*60*60) : 9999;\n  return hoursAgo > 48 && l.BOOKED !== 'TRUE' && l.STATUS !== 'COLD';\n}).length;\n\nconst report = `\n================================================\n        DAILY SALES PIPELINE REPORT\n        ${today}\n================================================\n\n📊 LEAD OVERVIEW\n  Total Leads:        ${totalLeads}\n  New This Week:      ${newThisWeek}\n  New (Uncontacted):  ${newLeads}\n  Qualified:          ${qualifiedLeads}\n  Following Up:       ${followingUp}\n  Gone Cold:          ${coldLeads}\n\n🔥 LEAD SCORES\n  HOT:   ${hotLeads}\n  WARM:  ${warmLeads}\n  COLD:  ${coldLeads}\n\n📅 APPOINTMENTS\n  Total Booked:   ${bookedLeads} leads\n  Confirmed Appts: ${confirmedAppts}\n  Upcoming:       ${upcomingAppts}\n  Conversion Rate: ${conversionRate}%\n\n⚠️  NEEDS ATTENTION\n  Leads with no contact in 48h+: ${needsFollowUp}\n\n📍 LEAD SOURCES\n${sourceLines}\n\n================================================\n`;\n\nreturn [{ json: { report, totalLeads, bookedLeads, conversionRate, hotLeads, needsFollowUp, newThisWeek } }];"},"type":"n8n-nodes-base.code","typeVersion":2,"position":[500,0],"id":"wf7-node-004","name":"Build Dashboard Report"},
+    {"parameters":{"fromEmail":"sender@example.com","toEmail":"team@example.com","subject":"=📊 Daily Sales Report — {{ $json.totalLeads }} Leads | {{ $json.conversionRate }}% Conversion | {{ $json.hotLeads }} HOT","emailFormat":"text","text":"={{ $json.report }}","options":{}},"type":"n8n-nodes-base.emailSend","typeVersion":2.1,"position":[720,0],"id":"wf7-node-005","name":"Email Daily Report"}
   ],
-  "connections": {
-    "Daily Report Trigger": {
-      "main": [
-        [
-          {
-            "node": "Get All Leads",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Get All Appointments",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get All Leads": {
-      "main": [
-        [
-          {
-            "node": "Build Dashboard Report",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get All Appointments": {
-      "main": [
-        [
-          {
-            "node": "Build Dashboard Report",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Build Dashboard Report": {
-      "main": [
-        [
-          {
-            "node": "Email Daily Report",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
+  "connections":{
+    "Daily Report Trigger":{"main":[[{"node":"Get All Leads","type":"main","index":0},{"node":"Get All Appointments","type":"main","index":0}]]},
+    "Get All Leads":{"main":[[{"node":"Build Dashboard Report","type":"main","index":0}]]},
+    "Get All Appointments":{"main":[[{"node":"Build Dashboard Report","type":"main","index":0}]]},
+    "Build Dashboard Report":{"main":[[{"node":"Email Daily Report","type":"main","index":0}]]}
   },
-  "active": false,
-  "settings": {
-    "executionOrder": "v1"
-  },
-  "meta": {
-    "instanceId": "ai-sales-crm"
-  },
-  "id": "BestWF7",
-  "tags": [
-    {
-      "name": "AI Sales CRM"
-    }
-  ]
+  "active":false,
+  "settings":{"executionOrder":"v1"},
+  "meta":{"instanceId":"ai-sales-crm"},
+  "id":"BestWF7",
+  "tags":[{"name":"AI Sales CRM"}]
 }
